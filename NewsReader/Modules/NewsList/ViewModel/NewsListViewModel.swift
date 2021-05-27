@@ -14,40 +14,74 @@ enum Action {
     case openDetails(ofIndexPath: IndexPath)
 }
 
-final class NewsListViewModel: LoadableViewModel {
+enum InputAction {
+    case loadData(showLoader: Bool)
+    case refresh(withLoader: Bool)
+    case refreshIfNeeded
+    case openDetails(ofIndexPath: IndexPath)
+}
+
+enum OutputAction {
+    case dataReady
+    case gotError(String)
+}
+
+final class NewsListViewModel: ViewModelType, LoadableViewModel {
+    
+    var output: Output!
+    var input: Input!
+    let dependencies: Dependencies!
+    
+    struct Dependencies {
+        let repository: NewsRepository
+    }
+    
+    struct Input {
+        let loadDataSubject: CurrentValueSubject<Bool, Never>
+        let actionHandlerSubject: PassthroughSubject<Action, Never>
+    }
+    
+    struct Output {
+        let disposables: [AnyCancellable]
+        var screenData: [ArticleViewModel]
+        let outputSubject: PassthroughSubject<OutputAction, Never>
+    }
+    
     //MARK: Dependencies
-    private let repository: NewsRepository
     weak var coordinatorDelegate: NewsListCoordinatorDelegate?
     
     //MARK: Stored Properties
-    var screenData = [ArticleViewModel]()
     var lastUpdate: Date?
     
     //MARK: Protocol Conformance
     var loaderPublisher = PassthroughSubject<Bool, Never>()
     
-    //MARK: Subjects
-    let loadDataSubject = CurrentValueSubject<Bool, Never>(true)
-    let screenDataReady = PassthroughSubject<Void, Never>()
-    let errorPublisher = PassthroughSubject<String, Never>()
-    let actionHandlerSubject = PassthroughSubject<Action, Never>()
-    
     //MARK: Init
-    init(repository: NewsRepository) {
-        self.repository = repository
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
     
     deinit {
         debugPrint("NewList ViewModel deinit")
     }
+    
+    func transform(input: Input) -> Output {
+        self.input = input
+        var disposables = [AnyCancellable]()
+        disposables.append(initializeInputSubject(input.inputSubject))
+        self.output = Output(disposables: disposables,
+                             screenData: [],
+                             outputSubject: PassthroughSubject<OutputAction, Never>())
+        return output
+    }
 }
 
 extension NewsListViewModel {
-    func initializeScreenData(_ subject: CurrentValueSubject<Bool, Never>) -> AnyCancellable {
+    func initializeLoadData(_ subject: CurrentValueSubject<Bool, Never>) -> AnyCancellable {
         return subject
             .flatMap { [unowned self] (shouldShowLoader) -> AnyPublisher<Result<Articles, NetworkError>, Never> in
-                self.loaderPublisher.send(shouldShowLoader)
-                return self.repository.getNewsList()
+                    self.loaderPublisher.send(shouldShowLoader)
+                    return self.dependencies.repository.getNewsList()
             }
             .map({ responseResult -> Result<[ArticleViewModel], NetworkError> in
                 switch responseResult {
@@ -64,31 +98,43 @@ extension NewsListViewModel {
                 self.loaderPublisher.send(false)
                 switch responseResult {
                 case .success(let screenData):
-                    self.screenData = screenData
-                    self.screenDataReady.send()
+                    self.output.screenData = screenData
+                    self.output.outputSubject.send(.dataReady)
                     self.lastUpdate = Date()
                 case .failure(let error):
-                    self.errorPublisher.send(error.localizedDescription)
+                    self.output.outputSubject.send(.gotError(error.localizedDescription))
                 }
             }
-    }
-    
-    func attachActionListener(_ subject: PassthroughSubject<Action, Never>) -> AnyCancellable {
-        return subject
-            .subscribe(on: DispatchQueue.global(qos: .background))
-            .receive(on: RunLoop.main)
-            .sink { [unowned self] (action) in
-                switch action {
-                case .refresh(let shouldShowLoader):
-                    self.loadDataSubject.send(shouldShowLoader)
-                case .refreshIfNeeded:
-                    if (self.isRefreshNeeded()) {
-                        self.loadDataSubject.send(true)
+        
+        func initializeActionHandler(_ subject: PassthroughSubject<Action, Never>) -> AnyCancellable {
+            return subject
+                .map { [unowned self] (action) in
+                    switch action {
+                    case .openDetails(let indexPath):
+                        self.coordinatorDelegate?.openDetails(of: indexPath)
+                    case .refresh(let shouldShowLoader):
+                        self.input.inputSubject.send(.loadData(showLoader: shouldShowLoader))
+                    case .refreshIfNeeded:
+                        if (self.isRefreshNeeded()) {
+                            self.input.inputSubject.send(.loadData(showLoader: true))
+                        }
                     }
-                case .openDetails(let indexPath):
-                    self.coordinatorDelegate?.openDetails(of: indexPath)
                 }
-            }
+                .subscribe(on: DispatchQueue.global(qos: .background))
+                .receive(on: RunLoop.main)
+                .sink { [unowned self] responseResult in
+                    self.loaderPublisher.send(false)
+                    switch responseResult {
+                    case .success(let screenData):
+                        self.output.screenData = screenData
+                        self.output.outputSubject.send(.dataReady)
+                        self.lastUpdate = Date()
+                    case .failure(let error):
+                        self.output.outputSubject.send(.gotError(error.localizedDescription))
+                    }
+                }
+
+        }
     }
 }
 

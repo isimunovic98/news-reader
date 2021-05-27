@@ -19,7 +19,7 @@ class NewsListCoordinator: Coordinator {
     }
     
     deinit {
-        debugPrint("NewList Coordinator deinit")
+        debugPrint("NewList Coordinator deinit!")
     }
     
     func start() {
@@ -28,7 +28,8 @@ class NewsListCoordinator: Coordinator {
     
     static func createController() -> NewsListViewController {
         let repository = NewsRepositoryImpl()
-        let viewModel = NewsListViewModel(repository: repository)
+        let dependencies = NewsListViewModel.Dependencies(repository: repository)
+        let viewModel = NewsListViewModel(dependencies: dependencies)
         let viewController = NewsListViewController(viewModel: viewModel)
         return viewController
     }

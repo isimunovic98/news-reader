@@ -10,12 +10,15 @@ import Combine
 import SnapKit
 
 class NewsListViewController: UIViewController, LoadableViewController {
+    
     //MARK: Dependecies
     private let viewModel: NewsListViewModel
     
     //MARK: Stored Properties
-    var disposeBag = Set<AnyCancellable>()
+    private let viewModelInput: NewsListViewModel.Input!
+
     var loaderOverlay = LoaderOverlay()
+    var disposeBag = Set<AnyCancellable>()
     
     //MARK: Properties
     private let tableView: UITableView = {
@@ -30,6 +33,8 @@ class NewsListViewController: UIViewController, LoadableViewController {
     //MARK: Init
     init(viewModel: NewsListViewModel) {
         self.viewModel = viewModel
+        self.viewModelInput = NewsListViewModel.Input(inputSubject: CurrentValueSubject<InputAction, Never>(.loadData(showLoader: true)))
+        self.viewModel.output = viewModel.transform(input: self.viewModelInput)
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -52,7 +57,7 @@ extension NewsListViewController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        viewModel.actionHandlerSubject.send(.refreshIfNeeded)
+        viewModelInput.inputSubject.send(.refreshIfNeeded)
     }
 }
 
@@ -92,11 +97,11 @@ extension NewsListViewController {
 //MARK: - TableViewDelegates
 extension NewsListViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return viewModel.screenData.count
+        return viewModel.output.screenData.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let screenData = viewModel.screenData
+        let screenData = viewModel.output.screenData
         let cellData = screenData[indexPath.item]
         
         let cell: NewsListTableViewCell = tableView.dequeue(for: indexPath)
@@ -107,48 +112,39 @@ extension NewsListViewController: UITableViewDelegate, UITableViewDataSource {
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        viewModel.actionHandlerSubject.send(.openDetails(ofIndexPath: indexPath))
+        viewModelInput.inputSubject.send(.openDetails(ofIndexPath: indexPath))
     }
 }
 
 //MARK: - ViewController Bindings
 extension NewsListViewController {
     func setupBindings() {
-        viewModel.initializeScreenData(viewModel.loadDataSubject).store(in: &disposeBag)
-        
         initializeLoaderSubject(viewModel.loaderPublisher).store(in: &disposeBag)
         
-        viewModel.attachActionListener(viewModel.actionHandlerSubject).store(in: &disposeBag)
-        
-        viewModel.screenDataReady
+        viewModel.output.outputSubject
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
-            .sink { [weak self] in
-                self?.tableView.reloadData()
-                self?.refreshControl.endRefreshing()
+            .sink { [weak self] outputAction in
+                switch outputAction {
+                case .dataReady:
+                    self?.tableView.reloadData()
+                    self?.refreshControl.endRefreshing()
+                case.gotError(let message):
+                    self?.showAlert(withMessage: message)
+                }
             }
             .store(in: &disposeBag)
-        
-        viewModel.errorPublisher
-            .subscribe(on: DispatchQueue.global(qos: .background))
-            .receive(on: RunLoop.main)
-            .sink { [weak self] message in
-                self?.showAlert(withMessage: message)
-            }
-            .store(in: &disposeBag)
-        
-        
     }
 }
 
 //MARK: - Private Methods
 private extension NewsListViewController {
     @objc func refreshData() {
-        viewModel.actionHandlerSubject.send(.refresh(withLoader: false))
+        viewModelInput.inputSubject.send(.refresh(withLoader: false))
     }
     
     @objc func appMovedToForeground() {
-        viewModel.actionHandlerSubject.send(.refreshIfNeeded)
+        viewModelInput.inputSubject.send(.refreshIfNeeded)
     }
 }
 

@@ -15,7 +15,6 @@ public class LoaderOverlay {
     }()
     
     func showLoader(viewController: UIViewController) {
-        viewController.navigationController?.isNavigationBarHidden = true
         viewController.view.addSubview(loaderView)
         loaderView.snp.makeConstraints { (make) in
             make.edges.equalToSuperview()
