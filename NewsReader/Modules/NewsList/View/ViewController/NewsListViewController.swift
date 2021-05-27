@@ -33,7 +33,8 @@ class NewsListViewController: UIViewController, LoadableViewController {
     //MARK: Init
     init(viewModel: NewsListViewModel) {
         self.viewModel = viewModel
-        self.viewModelInput = NewsListViewModel.Input(inputSubject: CurrentValueSubject<InputAction, Never>(.loadData(showLoader: true)))
+        self.viewModelInput = NewsListViewModel.Input(loadDataSubject: CurrentValueSubject<Bool, Never>(true),
+                                                      actionHandlerSubject: PassthroughSubject<Action, Never>())
         self.viewModel.output = viewModel.transform(input: self.viewModelInput)
         super.init(nibName: nil, bundle: nil)
     }
@@ -57,7 +58,7 @@ extension NewsListViewController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        viewModelInput.inputSubject.send(.refreshIfNeeded)
+        viewModelInput.actionHandlerSubject.send(.refreshIfNeeded)
     }
 }
 
@@ -112,7 +113,7 @@ extension NewsListViewController: UITableViewDelegate, UITableViewDataSource {
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        viewModelInput.inputSubject.send(.openDetails(ofIndexPath: indexPath))
+        viewModelInput.actionHandlerSubject.send(.openDetails(ofIndexPath: indexPath))
     }
 }
 
@@ -125,13 +126,7 @@ extension NewsListViewController {
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
             .sink { [weak self] outputAction in
-                switch outputAction {
-                case .dataReady:
-                    self?.tableView.reloadData()
-                    self?.refreshControl.endRefreshing()
-                case.gotError(let message):
-                    self?.showAlert(withMessage: message)
-                }
+                self?.handle(outputAction)
             }
             .store(in: &disposeBag)
     }
@@ -140,11 +135,21 @@ extension NewsListViewController {
 //MARK: - Private Methods
 private extension NewsListViewController {
     @objc func refreshData() {
-        viewModelInput.inputSubject.send(.refresh(withLoader: false))
+        viewModelInput.actionHandlerSubject.send(.refresh(withLoader: false))
     }
     
     @objc func appMovedToForeground() {
-        viewModelInput.inputSubject.send(.refreshIfNeeded)
+        viewModelInput.actionHandlerSubject.send(.refreshIfNeeded)
+    }
+    
+    func handle(_ action: OutputAction) {
+        switch action {
+        case .dataReady:
+            self.tableView.reloadData()
+            self.refreshControl.endRefreshing()
+        case.gotError(let message):
+            self.showAlert(withMessage: message)
+        }
     }
 }
 
