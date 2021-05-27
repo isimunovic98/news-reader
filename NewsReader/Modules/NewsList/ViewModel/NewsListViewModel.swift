@@ -14,13 +14,6 @@ enum Action {
     case openDetails(ofIndexPath: IndexPath)
 }
 
-enum InputAction {
-    case loadData(showLoader: Bool)
-    case refresh(withLoader: Bool)
-    case refreshIfNeeded
-    case openDetails(ofIndexPath: IndexPath)
-}
-
 enum OutputAction {
     case dataReady
     case gotError(String)
