@@ -16,7 +16,6 @@ enum NewsListInput {
 }
 
 enum NewsListOutput {
-    case idle
     case showLoader(Bool)
     case dataReady
     case gotError(String)
@@ -68,7 +67,6 @@ extension NewsListViewModel {
         return input
             .flatMap { [unowned self] inputAction -> AnyPublisher<[NewsListOutput], Never> in
                 //awfull
-                self.output.outputActions.removeAll()
                 switch inputAction {
                 case .loadData(let showLoader):
                     return self.handleLoadScreenData(showLoader)
@@ -81,8 +79,8 @@ extension NewsListViewModel {
                 case .showDetails(let indexPath):
                     return handleShowDetails(of: indexPath)
                 }
-                //me no likey
-                return Just([.idle]).eraseToAnyPublisher()
+                
+                return Just(self.output.outputActions).eraseToAnyPublisher()
             }
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
@@ -95,6 +93,7 @@ extension NewsListViewModel {
 //MARK: - Private Methods
 private extension NewsListViewModel {
     func handleLoadScreenData(_ showLoader: Bool) -> AnyPublisher<[NewsListOutput], Never> {
+        var outputActions = [NewsListOutput]()
         return dependencies.repository.getNewsList()
             .map({ [unowned self] responseResult -> Result<[ArticleViewModel], NetworkError> in
                 //self.output.outputActions.append(.showLoader(showLoader))
@@ -108,25 +107,25 @@ private extension NewsListViewModel {
                 }
             })
             .flatMap { [unowned self] responseResult -> AnyPublisher<[NewsListOutput], Never> in
-                self.output.outputActions.append(.showLoader(false))
+                outputActions.append(.showLoader(false))
                 //self.output.outputSubject.send([.showLoader(false)])
                 switch responseResult {
                 case .success(let screenData):
                     self.output.screenData = screenData
                     self.lastUpdate = Date()
-                    self.output.outputActions.append(.dataReady)
+                    outputActions.append(.dataReady)
                 case .failure(let error):
-                    self.output.outputActions.append(.gotError(error.localizedDescription))
+                    outputActions.append(.gotError(error.localizedDescription))
                 }
                 
-                return Just(self.output.outputActions).eraseToAnyPublisher()
+                return Just(outputActions).eraseToAnyPublisher()
             }.eraseToAnyPublisher()
     }
     
     func handleShowDetails(of indexPath: IndexPath) -> AnyPublisher<[NewsListOutput], Never> {
+        var outputActions = [NewsListOutput]()
         dependencies.coordinatorDelegate?.openDetails(of: indexPath)
-        output.outputActions.append(.idle)
-        return Just(output.outputActions).eraseToAnyPublisher()
+        return Just(outputActions).eraseToAnyPublisher()
     }
     
     func createNewsListScreenData(from response: [Article]) -> [ArticleViewModel] {

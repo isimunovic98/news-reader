@@ -141,8 +141,6 @@ private extension NewsListViewController {
     
     func handle(_ action: NewsListOutput) {
         switch action {
-        case .idle:
-            print("idle")
         case .dataReady:
             self.tableView.reloadData()
             self.refreshControl.endRefreshing()
