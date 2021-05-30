@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct ArticleViewModel {
+struct ArticleViewModel: Hashable {
     var author: String
     var title: String
     var description: String

@@ -10,6 +10,7 @@ import Combine
 import SnapKit
 
 class NewsListViewController: UIViewController, LoadableViewController {
+    typealias Snapshot = NSDiffableDataSourceSnapshot<Section, ArticleViewModel>
     
     //MARK: Dependecies
     private let viewModel: NewsListViewModel
@@ -85,28 +86,12 @@ extension NewsListViewController {
     
     func setupTableView() {
         tableView.delegate = self
-        tableView.dataSource = self
         tableView.register(NewsListTableViewCell.self, forCellReuseIdentifier: NewsListTableViewCell.reuseIdentifier)
     }
 }
 
 //MARK: - TableViewDelegates
-extension NewsListViewController: UITableViewDelegate, UITableViewDataSource {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return viewModel.output.screenData.count
-    }
-    
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let screenData = viewModel.output.screenData
-        let cellData = screenData[indexPath.item]
-        
-        let cell: NewsListTableViewCell = tableView.dequeue(for: indexPath)
-        
-        cell.configure(with: cellData)
-        
-        return cell
-    }
-    
+extension NewsListViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         viewModel.input.send(.showDetails(ofIndexPath: indexPath))
     }
@@ -126,6 +111,13 @@ extension NewsListViewController {
                 }
             }
             .store(in: &disposeBag)
+        
+        viewModel.diffableDataSource = NewsListDiffableDataSource(tableView: tableView,
+                                                                  cellProvider: { (tableView, indexPath, article) -> UITableViewCell? in
+                                                                    let cell: NewsListTableViewCell = tableView.dequeue(for: indexPath)
+                                                                    cell.configure(with: article)
+                                                                    return cell
+                                                                  })
     }
 }
 
@@ -141,9 +133,8 @@ private extension NewsListViewController {
     
     func handle(_ action: NewsListOutput) {
         switch action {
-        case .dataReady:
-            self.tableView.reloadData()
-            self.refreshControl.endRefreshing()
+        case .stopRefresh:
+            refreshControl.endRefreshing()
         case .showLoader(let showLoader):
             if showLoader {
                 loaderOverlay.showLoader(viewController: self)

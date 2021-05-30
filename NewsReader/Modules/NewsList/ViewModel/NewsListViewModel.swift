@@ -17,7 +17,7 @@ enum NewsListInput {
 
 enum NewsListOutput {
     case showLoader(Bool)
-    case dataReady
+    case stopRefresh
     case gotError(String)
 }
 
@@ -47,6 +47,9 @@ final class NewsListViewModel {
     }
 
     internal var lastUpdate: Date?
+    
+    var diffableDataSource: NewsListDiffableDataSource!
+    var snapshot = NewsListSnapshot()
     
     //MARK: Init
     init(dependencies: Dependencies) {
@@ -85,6 +88,7 @@ extension NewsListViewModel {
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
             .sink { [unowned self] outputActions in
+                self.applySnapshot()
                 self.output.outputSubject.send(outputActions)
             }
     }
@@ -113,7 +117,7 @@ private extension NewsListViewModel {
                 case .success(let screenData):
                     self.output.screenData = screenData
                     self.lastUpdate = Date()
-                    outputActions.append(.dataReady)
+                    outputActions.append(.stopRefresh)
                 case .failure(let error):
                     outputActions.append(.gotError(error.localizedDescription))
                 }
@@ -123,9 +127,16 @@ private extension NewsListViewModel {
     }
     
     func handleShowDetails(of indexPath: IndexPath) -> AnyPublisher<[NewsListOutput], Never> {
-        var outputActions = [NewsListOutput]()
+        let outputActions = [NewsListOutput]()
         dependencies.coordinatorDelegate?.openDetails(of: indexPath)
         return Just(outputActions).eraseToAnyPublisher()
+    }
+    
+    func applySnapshot(animatingDifferences: Bool = true) {
+        snapshot.snapshot.deleteAllItems()
+        snapshot.snapshot.appendSections([.main])
+        snapshot.snapshot.appendItems(output.screenData)
+        diffableDataSource.apply(snapshot.snapshot, animatingDifferences: animatingDifferences)
     }
     
     func createNewsListScreenData(from response: [Article]) -> [ArticleViewModel] {
