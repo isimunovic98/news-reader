@@ -9,9 +9,7 @@ import UIKit
 import Combine
 import SnapKit
 
-class NewsListViewController: UIViewController, LoadableViewController {
-    typealias Snapshot = NSDiffableDataSourceSnapshot<Section, ArticleViewModel>
-    
+class NewsListViewController: UIViewController, LoadableViewController {    
     //MARK: Dependecies
     private let viewModel: NewsListViewModel
     

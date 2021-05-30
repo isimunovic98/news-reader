@@ -50,7 +50,6 @@ final class NewsListViewModel {
     
     var diffableDataSource: NewsListDiffableDataSource!
     
-    
     //MARK: Init
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
