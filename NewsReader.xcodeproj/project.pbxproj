@@ -265,6 +265,7 @@
 		0236C352265E5CE100EE09D1 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				02F4F7832663FAB2002505D6 /* NewsListDiffableDataSource.swift */,
 				0227FDCC265EB16A008F9A02 /* ArticleViewModel.swift */,
 				02F4F77D2663E503002505D6 /* Section.swift */,
 			);
@@ -275,7 +276,6 @@
 			isa = PBXGroup;
 			children = (
 				0227FDCF265EB17C008F9A02 /* NewsListViewModel.swift */,
-				02F4F7832663FAB2002505D6 /* NewsListDiffableDataSource.swift */,
 			);
 			path = ViewModel;
 			sourceTree = "<group>";
