@@ -8,125 +8,128 @@
 import Foundation
 import Combine
 
-enum Action {
-    case refresh(withLoader: Bool)
+enum NewsListInput {
+    case loadData(showLoader: Bool)
     case refreshIfNeeded
-    case openDetails(ofIndexPath: IndexPath)
+    case pullToRefresh
+    case showDetails(ofIndexPath: IndexPath)
 }
 
-enum OutputAction {
+enum NewsListOutput {
+    case idle
+    case showLoader(Bool)
     case dataReady
     case gotError(String)
 }
 
-final class NewsListViewModel: ViewModelType, LoadableViewModel {
-    
+final class NewsListViewModel {
+    var input = CurrentValueSubject<NewsListInput, Never>(.loadData(showLoader: true))
     var output: Output!
-    var input: Input!
-    let dependencies: Dependencies!
+    var dependencies: Dependencies!
     
     struct Dependencies {
         let repository: NewsRepository
-    }
-    
-    struct Input {
-        let loadDataSubject: CurrentValueSubject<Bool, Never>
-        let actionHandlerSubject: PassthroughSubject<Action, Never>
+        weak var coordinatorDelegate: NewsListCoordinatorDelegate?
     }
     
     struct Output {
-        let disposables: [AnyCancellable]
         var screenData: [ArticleViewModel]
-        let outputSubject: PassthroughSubject<OutputAction, Never>
+        var outputActions: [NewsListOutput]
+        let outputSubject: PassthroughSubject<[NewsListOutput], Never>
     }
     
-    //MARK: Dependencies
-    weak var coordinatorDelegate: NewsListCoordinatorDelegate?
-    
-    //MARK: Stored Properties
-    var lastUpdate: Date?
-    
-    //MARK: Protocol Conformance
-    var loaderPublisher = PassthroughSubject<Bool, Never>()
+    //MARK: Internal Properties
+    internal var isRefreshNeeded: Bool {
+        guard let lastUpdate = self.lastUpdate else {
+            return false
+        }
+        let expression = lastUpdate.addingTimeInterval(300) < Date()
+        return expression
+    }
+
+    internal var lastUpdate: Date?
     
     //MARK: Init
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+        self.output = Output(screenData: [],
+                             outputActions: [],
+                             outputSubject: PassthroughSubject<[NewsListOutput], Never>())
     }
     
     deinit {
         debugPrint("NewList ViewModel deinit")
     }
-    
-    func transform(input: Input) -> Output {
-        self.input = input
-        var disposables = [AnyCancellable]()
-        disposables.append(initializeLoadData(input.loadDataSubject))
-        disposables.append(initializeActionHandler(input.actionHandlerSubject))
-        self.output = Output(disposables: disposables,
-                             screenData: [],
-                             outputSubject: PassthroughSubject<OutputAction, Never>())
-        return output
+}
+
+//MARK: - Binding
+extension NewsListViewModel {
+    func setupBindings() -> AnyCancellable {
+        return input
+            .flatMap { [unowned self] inputAction -> AnyPublisher<[NewsListOutput], Never> in
+                //awfull
+                self.output.outputActions.removeAll()
+                switch inputAction {
+                case .loadData(let showLoader):
+                    return self.handleLoadScreenData(showLoader)
+                case .refreshIfNeeded:
+                    if (self.isRefreshNeeded) {
+                        return self.handleLoadScreenData(true)
+                    }
+                case .pullToRefresh:
+                    return self.handleLoadScreenData(false)
+                case .showDetails(let indexPath):
+                    return handleShowDetails(of: indexPath)
+                }
+                //me no likey
+                return Just([.idle]).eraseToAnyPublisher()
+            }
+            .subscribe(on: DispatchQueue.global(qos: .background))
+            .receive(on: RunLoop.main)
+            .sink { [unowned self] outputActions in
+                self.output.outputSubject.send(outputActions)
+            }
     }
 }
 
-extension NewsListViewModel {
-    func initializeLoadData(_ subject: CurrentValueSubject<Bool, Never>) -> AnyCancellable {
-        return subject
-            .flatMap { [unowned self] (shouldShowLoader) -> AnyPublisher<Result<Articles, NetworkError>, Never> in
-                self.loaderPublisher.send(shouldShowLoader)
-                return self.dependencies.repository.getNewsList()
-            }
-            .map({ responseResult -> Result<[ArticleViewModel], NetworkError> in
+//MARK: - Private Methods
+private extension NewsListViewModel {
+    func handleLoadScreenData(_ showLoader: Bool) -> AnyPublisher<[NewsListOutput], Never> {
+        return dependencies.repository.getNewsList()
+            .map({ [unowned self] responseResult -> Result<[ArticleViewModel], NetworkError> in
+                //self.output.outputActions.append(.showLoader(showLoader))
+                self.output.outputSubject.send([.showLoader(showLoader)])
                 switch responseResult {
                 case .success(let articlesResponse):
-                    let screenData = self.createScreenData(from: articlesResponse.articles)
+                    let screenData = self.createNewsListScreenData(from: articlesResponse.articles)
                     return .success(screenData)
                 case .failure(let error):
                     return .failure(error)
                 }
             })
-            .subscribe(on: DispatchQueue.global(qos: .background))
-            .receive(on: RunLoop.main)
-            .sink { [unowned self] responseResult in
-                self.loaderPublisher.send(false)
+            .flatMap { [unowned self] responseResult -> AnyPublisher<[NewsListOutput], Never> in
+                self.output.outputActions.append(.showLoader(false))
+                //self.output.outputSubject.send([.showLoader(false)])
                 switch responseResult {
                 case .success(let screenData):
                     self.output.screenData = screenData
-                    self.output.outputSubject.send(.dataReady)
                     self.lastUpdate = Date()
+                    self.output.outputActions.append(.dataReady)
                 case .failure(let error):
-                    self.output.outputSubject.send(.gotError(error.localizedDescription))
+                    self.output.outputActions.append(.gotError(error.localizedDescription))
                 }
-            }
+                
+                return Just(self.output.outputActions).eraseToAnyPublisher()
+            }.eraseToAnyPublisher()
     }
     
-    func initializeActionHandler(_ subject: PassthroughSubject<Action, Never>) -> AnyCancellable {
-        return subject
-            .map { [unowned self] (action) in
-                switch action {
-                case .openDetails(let indexPath):
-                    self.coordinatorDelegate?.openDetails(of: indexPath)
-                case .refresh(let shouldShowLoader):
-                    self.input.loadDataSubject.send(shouldShowLoader)
-                case .refreshIfNeeded:
-                    if (self.isRefreshNeeded()) {
-                        self.input.loadDataSubject.send(true)
-                    }
-                }
-            }
-            .subscribe(on: DispatchQueue.global(qos: .background))
-            .receive(on: RunLoop.main)
-            .sink { (_) in
-                
-            }
+    func handleShowDetails(of indexPath: IndexPath) -> AnyPublisher<[NewsListOutput], Never> {
+        dependencies.coordinatorDelegate?.openDetails(of: indexPath)
+        output.outputActions.append(.idle)
+        return Just(output.outputActions).eraseToAnyPublisher()
     }
-}
-
-
-//MARK: - Private Methods
-private extension NewsListViewModel {
-    func createScreenData(from response: [Article]) -> [ArticleViewModel] {
+    
+    func createNewsListScreenData(from response: [Article]) -> [ArticleViewModel] {
         var temp = [ArticleViewModel]()
         if response.isEmpty {
             //APPEND EMMPTY STATE
@@ -134,12 +137,5 @@ private extension NewsListViewModel {
         }
         temp = response.map({ ArticleViewModel($0) })
         return temp
-    }
-    
-    func isRefreshNeeded() -> Bool {
-        guard let lastUpdate = self.lastUpdate else {
-            return false
-        }
-        return lastUpdate.addingTimeInterval(300) > Date()
     }
 }

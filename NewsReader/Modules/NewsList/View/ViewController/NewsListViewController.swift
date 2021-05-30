@@ -15,9 +15,7 @@ class NewsListViewController: UIViewController, LoadableViewController {
     private let viewModel: NewsListViewModel
     
     //MARK: Stored Properties
-    private let viewModelInput: NewsListViewModel.Input!
-
-    var loaderOverlay = LoaderOverlay()
+    let loaderOverlay: LoaderOverlay
     var disposeBag = Set<AnyCancellable>()
     
     //MARK: Properties
@@ -33,9 +31,7 @@ class NewsListViewController: UIViewController, LoadableViewController {
     //MARK: Init
     init(viewModel: NewsListViewModel) {
         self.viewModel = viewModel
-        self.viewModelInput = NewsListViewModel.Input(loadDataSubject: CurrentValueSubject<Bool, Never>(true),
-                                                      actionHandlerSubject: PassthroughSubject<Action, Never>())
-        self.viewModel.output = viewModel.transform(input: self.viewModelInput)
+        self.loaderOverlay = LoaderOverlay()
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -58,7 +54,6 @@ extension NewsListViewController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        viewModelInput.actionHandlerSubject.send(.refreshIfNeeded)
     }
 }
 
@@ -113,20 +108,22 @@ extension NewsListViewController: UITableViewDelegate, UITableViewDataSource {
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        viewModelInput.actionHandlerSubject.send(.openDetails(ofIndexPath: indexPath))
+        viewModel.input.send(.showDetails(ofIndexPath: indexPath))
     }
 }
 
 //MARK: - ViewController Bindings
 extension NewsListViewController {
     func setupBindings() {
-        initializeLoaderSubject(viewModel.loaderPublisher).store(in: &disposeBag)
+        viewModel.setupBindings().store(in: &disposeBag)
         
         viewModel.output.outputSubject
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
-            .sink { [weak self] outputAction in
-                self?.handle(outputAction)
+            .sink { [weak self] outputActions in
+                for action in outputActions {
+                    self?.handle(action)
+                }
             }
             .store(in: &disposeBag)
     }
@@ -135,18 +132,26 @@ extension NewsListViewController {
 //MARK: - Private Methods
 private extension NewsListViewController {
     @objc func refreshData() {
-        viewModelInput.actionHandlerSubject.send(.refresh(withLoader: false))
+        viewModel.input.send(.loadData(showLoader: false))
     }
     
     @objc func appMovedToForeground() {
-        viewModelInput.actionHandlerSubject.send(.refreshIfNeeded)
+        viewModel.input.send(.refreshIfNeeded)
     }
     
-    func handle(_ action: OutputAction) {
+    func handle(_ action: NewsListOutput) {
         switch action {
+        case .idle:
+            print("idle")
         case .dataReady:
             self.tableView.reloadData()
             self.refreshControl.endRefreshing()
+        case .showLoader(let showLoader):
+            if showLoader {
+                loaderOverlay.showLoader(viewController: self)
+            } else {
+                loaderOverlay.dismissLoader()
+            }
         case.gotError(let message):
             self.showAlert(withMessage: message)
         }
@@ -155,6 +160,6 @@ private extension NewsListViewController {
 
 extension NewsListViewController {
     func setCoordinatorDelegate(_ coordinatorDelegate: NewsListCoordinatorDelegate) {
-        viewModel.coordinatorDelegate = coordinatorDelegate
+        viewModel.dependencies.coordinatorDelegate = coordinatorDelegate
     }
 }
