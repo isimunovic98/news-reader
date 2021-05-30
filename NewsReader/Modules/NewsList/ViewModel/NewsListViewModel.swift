@@ -69,7 +69,6 @@ extension NewsListViewModel {
     func setupBindings() -> AnyCancellable {
         return input
             .flatMap { [unowned self] inputAction -> AnyPublisher<[NewsListOutput], Never> in
-                //awfull
                 switch inputAction {
                 case .loadData(let showLoader):
                     return self.handleLoadScreenData(showLoader)
@@ -99,7 +98,6 @@ private extension NewsListViewModel {
         var outputActions = [NewsListOutput]()
         return dependencies.repository.getNewsList()
             .map({ [unowned self] responseResult -> Result<[ArticleViewModel], NetworkError> in
-                //self.output.outputActions.append(.showLoader(showLoader))
                 self.output.outputSubject.send([.showLoader(showLoader)])
                 switch responseResult {
                 case .success(let articlesResponse):
@@ -111,7 +109,6 @@ private extension NewsListViewModel {
             })
             .flatMap { [unowned self] responseResult -> AnyPublisher<[NewsListOutput], Never> in
                 outputActions.append(.showLoader(false))
-                //self.output.outputSubject.send([.showLoader(false)])
                 switch responseResult {
                 case .success(let screenData):
                     applySnapshot(with: screenData)
