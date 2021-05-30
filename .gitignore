@@ -1,0 +1,26 @@
+# Created by https://www.toptal.com/developers/gitignore/api/macos,swift
+# Edit at https://www.toptal.com/developers/gitignore?templates=macos,swift
+
+### macOS ###
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## User settings
+xcuserdata
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+.build/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
