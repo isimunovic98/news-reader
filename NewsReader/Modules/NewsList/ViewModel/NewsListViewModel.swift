@@ -32,7 +32,7 @@ final class NewsListViewModel {
     }
     
     struct Output {
-        var screenData: [ArticleViewModel]
+        var snapshot: NewsListSnapshot
         var outputActions: [NewsListOutput]
         let outputSubject: PassthroughSubject<[NewsListOutput], Never>
     }
@@ -49,12 +49,12 @@ final class NewsListViewModel {
     internal var lastUpdate: Date?
     
     var diffableDataSource: NewsListDiffableDataSource!
-    var snapshot = NewsListSnapshot()
+    
     
     //MARK: Init
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
-        self.output = Output(screenData: [],
+        self.output = Output(snapshot: NewsListSnapshot(),
                              outputActions: [],
                              outputSubject: PassthroughSubject<[NewsListOutput], Never>())
     }
@@ -88,7 +88,6 @@ extension NewsListViewModel {
             .subscribe(on: DispatchQueue.global(qos: .background))
             .receive(on: RunLoop.main)
             .sink { [unowned self] outputActions in
-                self.applySnapshot()
                 self.output.outputSubject.send(outputActions)
             }
     }
@@ -115,7 +114,7 @@ private extension NewsListViewModel {
                 //self.output.outputSubject.send([.showLoader(false)])
                 switch responseResult {
                 case .success(let screenData):
-                    self.output.screenData = screenData
+                    applySnapshot(with: screenData)
                     self.lastUpdate = Date()
                     outputActions.append(.stopRefresh)
                 case .failure(let error):
@@ -132,11 +131,11 @@ private extension NewsListViewModel {
         return Just(outputActions).eraseToAnyPublisher()
     }
     
-    func applySnapshot(animatingDifferences: Bool = true) {
-        snapshot.snapshot.deleteAllItems()
-        snapshot.snapshot.appendSections([.main])
-        snapshot.snapshot.appendItems(output.screenData)
-        diffableDataSource.apply(snapshot.snapshot, animatingDifferences: animatingDifferences)
+    func applySnapshot(with screenData: [ArticleViewModel],animatingDifferences: Bool = true) {
+        output.snapshot.snapshot.deleteAllItems()
+        output.snapshot.snapshot.appendSections([.main])
+        output.snapshot.snapshot.appendItems(screenData)
+        diffableDataSource.apply(output.snapshot.snapshot, animatingDifferences: animatingDifferences)
     }
     
     func createNewsListScreenData(from response: [Article]) -> [ArticleViewModel] {
